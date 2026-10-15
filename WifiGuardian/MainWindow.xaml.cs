@@ -35,6 +35,7 @@ namespace WifiGuardian
         private bool _isMonitoring;
         private bool _useRegistryStartup;
         private bool _isDarkTheme;
+        private bool _allowClose;
         private const string StartupRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string StartupValueName = "WiFiGuardian";
 
@@ -104,7 +105,7 @@ namespace WifiGuardian
 
             if (_settings != null && !string.IsNullOrWhiteSpace(_settings.Ssid))
             {
-                StartMonitoring();
+                await StartMonitoringAsync();
             }
             else
             {
@@ -245,7 +246,7 @@ namespace WifiGuardian
             }
         }
 
-        private void StartButton_Click(object sender, RoutedEventArgs e)
+        private async void StartButton_Click(object sender, RoutedEventArgs e)
         {
             AppSettings config;
             if (!TryReadSettings(out config))
@@ -260,7 +261,7 @@ namespace WifiGuardian
 
                 _settings = config;
                 Log("Configuración guardada. Comenzando la vigilancia.");
-                StartMonitoring();
+                await StartMonitoringAsync();
             }
             catch (Exception ex)
             {
@@ -321,12 +322,13 @@ namespace WifiGuardian
             }
         }
 
-        private void StartMonitoring()
+        private async Task StartMonitoringAsync()
         {
             if (_settings == null || string.IsNullOrWhiteSpace(_settings.Ssid))
                 return;
 
-            StopMonitoring(false);
+            // Wait for any in-flight Windows tethering call to finish before starting another monitor.
+            await StopMonitoringAsync(false);
             _monitorCancellation = new CancellationTokenSource();
             _isMonitoring = true;
             StartButton.IsEnabled = true;
@@ -338,20 +340,42 @@ namespace WifiGuardian
             _monitorTask = MonitorLoopAsync(_monitorCancellation.Token);
         }
 
-        private void StopButton_Click(object sender, RoutedEventArgs e)
+        private async void StopButton_Click(object sender, RoutedEventArgs e)
         {
-            StopMonitoring(true);
+            await StopMonitoringAsync(true);
         }
 
-        private void StopMonitoring(bool addLog)
+        private async Task StopMonitoringAsync(bool addLog)
         {
-            if (_monitorCancellation != null)
+            var cancellation = _monitorCancellation;
+            var runningTask = _monitorTask;
+
+            if (cancellation != null)
+                cancellation.Cancel();
+
+            // Do not dispose the token source or start a new monitor while a Windows API call is still pending.
+            if (runningTask != null)
             {
-                _monitorCancellation.Cancel();
-                _monitorCancellation.Dispose();
-                _monitorCancellation = null;
+                try
+                {
+                    await runningTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    Log("La vigilancia terminó con un error durante la detención: " + ex.Message);
+                }
             }
 
+            if (ReferenceEquals(_monitorCancellation, cancellation))
+            {
+                _monitorCancellation = null;
+                _monitorTask = null;
+            }
+
+            cancellation?.Dispose();
             StopButton.IsEnabled = false;
             if (_isMonitoring)
             {
@@ -359,8 +383,9 @@ namespace WifiGuardian
                 RunStatusText.Text = "● DETENIDO";
                 RunStatusText.Foreground = System.Windows.Media.Brushes.Orange;
             }
+
             if (addLog)
-                Log("Vigilancia detenida. La configuración queda guardada.");
+                Log("Vigilancia detenida. Se esperó a que terminara cualquier operación en curso; el hotspot no se apaga automáticamente.");
         }
 
         private async Task MonitorLoopAsync(CancellationToken cancellationToken)
@@ -686,10 +711,17 @@ namespace WifiGuardian
             LogBox.ScrollToEnd();
         }
 
-        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        private async void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            StopMonitoring(false);
+            if (_allowClose)
+                return;
+
+            e.Cancel = true;
+            await StopMonitoringAsync(false);
+            _allowClose = true;
+            Close();
         }
+
     }
 
     public class AppSettings
