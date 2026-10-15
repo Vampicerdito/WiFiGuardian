@@ -1,0 +1,33 @@
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{C5F312C8-2B96-4F34-9B3B-8AC74A9B1D32}</ProjectGuid>
+    <ProjectTypeGuids>{C7167F0D-BC9F-4E7D-AB77-4F4C3B6A6EDE};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <TargetPlatformVersion>10.0.19041.0</TargetPlatformVersion>
+    <TargetPlatformMinVersion>10.0.16299.0</TargetPlatformMinVersion>
+    <DefaultLanguage>es-ES</DefaultLanguage>
+    <AppxPackageSigningEnabled>true</AppxPackageSigningEnabled>
+    <PackageCertificateKeyFile>WifiGuardian_TemporaryKey.pfx</PackageCertificateKeyFile>
+    <PackageCertificatePassword>DevOnly-WifiGuardian-2026</PackageCertificatePassword>
+    <AppxPackageDir>$(SolutionDir)AppPackages\</AppxPackageDir>
+    <GenerateAppInstallerFile>false</GenerateAppInstallerFile>
+    <AppxBundle>Never</AppxBundle>
+    <AppxBundlePlatforms>x64</AppxBundlePlatforms>
+    <AppxPackage>true</AppxPackage>
+    <Platform>x64</Platform>
+  </PropertyGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\DesktopBridge\Microsoft.DesktopBridge.props" />
+  <ItemGroup>
+    <ProjectReference Include="..\WifiGuardian\WifiGuardian.csproj">
+      <Project>{5E1C3EB5-A0E8-445D-93D5-B99B60654873}</Project>
+      <Name>WifiGuardian</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <AppxManifest Include="Package.appxmanifest" />
+    <Content Include="Assets\StoreLogo.png"><PackagePath>Assets\StoreLogo.png</PackagePath></Content>
+    <Content Include="Assets\Square44x44Logo.png"><PackagePath>Assets\Square44x44Logo.png</PackagePath></Content>
+    <Content Include="Assets\Square150x150Logo.png"><PackagePath>Assets\Square150x150Logo.png</PackagePath></Content>
+    <Content Include="Assets\Wide310x150Logo.png"><PackagePath>Assets\Wide310x150Logo.png</PackagePath></Content>
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\DesktopBridge\Microsoft.DesktopBridge.targets" />
+</Project>

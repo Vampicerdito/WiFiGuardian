@@ -1,0 +1,25 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WifiGuardian", "WifiGuardian\WifiGuardian.csproj", "{5E1C3EB5-A0E8-445D-93D5-B99B60654873}"
+EndProject
+Project("{C7167F0D-BC9F-4E7D-AB77-4F4C3B6A6EDE}") = "WifiGuardian.Package", "WifiGuardian.Package\WifiGuardian.Package.wapproj", "{C5F312C8-2B96-4F34-9B3B-8AC74A9B1D32}"
+EndProject
+Global
+  GlobalSection(SolutionConfigurationPlatforms) = preSolution
+    Debug|x64 = Debug|x64
+    Release|x64 = Release|x64
+  EndGlobalSection
+  GlobalSection(ProjectConfigurationPlatforms) = postSolution
+    {5E1C3EB5-A0E8-445D-93D5-B99B60654873}.Debug|x64.ActiveCfg = Debug|Any CPU
+    {5E1C3EB5-A0E8-445D-93D5-B99B60654873}.Debug|x64.Build.0 = Debug|Any CPU
+    {5E1C3EB5-A0E8-445D-93D5-B99B60654873}.Release|x64.ActiveCfg = Release|Any CPU
+    {5E1C3EB5-A0E8-445D-93D5-B99B60654873}.Release|x64.Build.0 = Release|Any CPU
+    {C5F312C8-2B96-4F34-9B3B-8AC74A9B1D32}.Debug|x64.ActiveCfg = Debug|x64
+    {C5F312C8-2B96-4F34-9B3B-8AC74A9B1D32}.Debug|x64.Build.0 = Debug|x64
+    {C5F312C8-2B96-4F34-9B3B-8AC74A9B1D32}.Release|x64.ActiveCfg = Release|x64
+    {C5F312C8-2B96-4F34-9B3B-8AC74A9B1D32}.Release|x64.Build.0 = Release|Any CPU
+    {C5F312C8-2B96-4F34-9B3B-8AC74A9B1D32}.Release|x64.Build.0 = Release|x64
+  EndGlobalSection
+EndGlobal

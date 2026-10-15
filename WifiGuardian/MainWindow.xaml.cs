@@ -1,0 +1,573 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.NetworkInformation;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
+using System.Xml.Serialization;
+using Windows.ApplicationModel;
+using Windows.Devices.WiFi;
+using Windows.Networking.Connectivity;
+using WinRtNetworkInformation = Windows.Networking.Connectivity.NetworkInformation;
+using Windows.Networking.NetworkOperators;
+using Windows.Security.Credentials;
+
+namespace WifiGuardian
+{
+    public partial class MainWindow : Window
+    {
+        private static readonly HttpClient InternetClient = CreateHttpClient();
+        private readonly string _settingsFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WifiGuardian");
+        private readonly string _settingsPath;
+        private AppSettings _settings;
+        private CancellationTokenSource _monitorCancellation;
+        private Task _monitorTask;
+        private bool _initializingControls;
+
+        public MainWindow()
+        {
+            InitializeComponent();
+            _settingsPath = Path.Combine(_settingsFolder, "settings.xml");
+        }
+
+        private static HttpClient CreateHttpClient()
+        {
+            var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            return client;
+        }
+
+        private async void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            _initializingControls = true;
+            LoadSettingsIntoForm();
+            await LoadStartupStatusAsync();
+            _initializingControls = false;
+
+            if (_settings != null && !string.IsNullOrWhiteSpace(_settings.Ssid))
+            {
+                StartMonitoring();
+            }
+            else
+            {
+                Log("Introduce el SSID, la contraseña y la IP de diagnóstico; después pulsa Guardar y comenzar.");
+            }
+        }
+
+        private void LoadSettingsIntoForm()
+        {
+            try
+            {
+                if (!File.Exists(_settingsPath))
+                {
+                    _settings = null;
+                    return;
+                }
+
+                using (var stream = File.OpenRead(_settingsPath))
+                {
+                    var serializer = new XmlSerializer(typeof(AppSettings));
+                    _settings = (AppSettings)serializer.Deserialize(stream);
+                }
+
+                IpBox.Text = string.IsNullOrWhiteSpace(_settings.DiagnosticIp) ? "1.1.1.1" : _settings.DiagnosticIp;
+                SsidBox.Text = _settings.Ssid ?? string.Empty;
+                IntervalBox.Text = Math.Max(5, _settings.IntervalSeconds).ToString();
+
+                if (!string.IsNullOrWhiteSpace(_settings.ProtectedPassword))
+                {
+                    try
+                    {
+                        var encrypted = Convert.FromBase64String(_settings.ProtectedPassword);
+                        var plain = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
+                        PasswordBox.Password = Encoding.UTF8.GetString(plain);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("No se pudo descifrar la contraseña guardada. Vuelve a escribirla. " + ex.Message);
+                        PasswordBox.Password = string.Empty;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _settings = null;
+                Log("No se pudo leer la configuración guardada: " + ex.Message);
+            }
+        }
+
+        private async Task LoadStartupStatusAsync()
+        {
+            try
+            {
+                var task = await StartupTask.GetAsync("WifiGuardianStartup");
+                StartupCheckBox.IsChecked = task.State == StartupTaskState.Enabled || task.State == StartupTaskState.EnabledByPolicy;
+            }
+            catch (Exception ex)
+            {
+                StartupCheckBox.IsChecked = false;
+                StartupCheckBox.IsEnabled = false;
+                Log("La opción de inicio automático solo funciona al ejecutar la aplicación instalada como MSIX. " + ex.Message);
+            }
+        }
+
+        private async void StartupCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_initializingControls || !StartupCheckBox.IsEnabled)
+                return;
+
+            try
+            {
+                var startupTask = await StartupTask.GetAsync("WifiGuardianStartup");
+                if (StartupCheckBox.IsChecked == true)
+                {
+                    var state = await startupTask.RequestEnableAsync();
+                    if (state == StartupTaskState.Enabled || state == StartupTaskState.EnabledByPolicy)
+                        Log("Inicio con Windows activado.");
+                    else
+                    {
+                        _initializingControls = true;
+                        StartupCheckBox.IsChecked = false;
+                        _initializingControls = false;
+                        Log("Windows no permitió activar el inicio automático. Comprueba Configuración > Aplicaciones > Inicio.");
+                    }
+                }
+                else
+                {
+                    startupTask.Disable();
+                    Log("Inicio con Windows desactivado.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("No se pudo cambiar el inicio automático: " + ex.Message);
+            }
+        }
+
+        private void StartButton_Click(object sender, RoutedEventArgs e)
+        {
+            AppSettings config;
+            if (!TryReadSettings(out config))
+                return;
+
+            try
+            {
+                Directory.CreateDirectory(_settingsFolder);
+                var serializer = new XmlSerializer(typeof(AppSettings));
+                using (var stream = File.Create(_settingsPath))
+                    serializer.Serialize(stream, config);
+
+                _settings = config;
+                Log("Configuración guardada. Comenzando la vigilancia.");
+                StartMonitoring();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("No se pudo guardar la configuración.\n\n" + ex.Message,
+                    "WiFi Guardian", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private bool TryReadSettings(out AppSettings config)
+        {
+            config = null;
+            var ipText = IpBox.Text.Trim();
+            IPAddress parsedIp;
+            if (!IPAddress.TryParse(ipText, out parsedIp))
+            {
+                MessageBox.Show("Escribe una dirección IP válida, por ejemplo 1.1.1.1.",
+                    "IP no válida", MessageBoxButton.OK, MessageBoxImage.Warning);
+                IpBox.Focus();
+                return false;
+            }
+
+            var ssid = SsidBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(ssid))
+            {
+                MessageBox.Show("Escribe el nombre SSID de la Wi-Fi.",
+                    "Falta el SSID", MessageBoxButton.OK, MessageBoxImage.Warning);
+                SsidBox.Focus();
+                return false;
+            }
+
+            int interval;
+            if (!int.TryParse(IntervalBox.Text.Trim(), out interval) || interval < 5 || interval > 3600)
+            {
+                MessageBox.Show("El intervalo debe ser un número entre 5 y 3600 segundos.",
+                    "Intervalo no válido", MessageBoxButton.OK, MessageBoxImage.Warning);
+                IntervalBox.Focus();
+                return false;
+            }
+
+            try
+            {
+                var passwordBytes = Encoding.UTF8.GetBytes(PasswordBox.Password ?? string.Empty);
+                var encrypted = ProtectedData.Protect(passwordBytes, null, DataProtectionScope.CurrentUser);
+                config = new AppSettings
+                {
+                    DiagnosticIp = ipText,
+                    Ssid = ssid,
+                    ProtectedPassword = Convert.ToBase64String(encrypted),
+                    IntervalSeconds = interval
+                };
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("No se pudo proteger la contraseña: " + ex.Message,
+                    "Error de seguridad", MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+        }
+
+        private void StartMonitoring()
+        {
+            if (_settings == null || string.IsNullOrWhiteSpace(_settings.Ssid))
+                return;
+
+            StopMonitoring(false);
+            _monitorCancellation = new CancellationTokenSource();
+            StartButton.IsEnabled = true;
+            StopButton.IsEnabled = true;
+            _monitorTask = MonitorLoopAsync(_monitorCancellation.Token);
+        }
+
+        private void StopButton_Click(object sender, RoutedEventArgs e)
+        {
+            StopMonitoring(true);
+        }
+
+        private void StopMonitoring(bool addLog)
+        {
+            if (_monitorCancellation != null)
+            {
+                _monitorCancellation.Cancel();
+                _monitorCancellation.Dispose();
+                _monitorCancellation = null;
+            }
+
+            StopButton.IsEnabled = false;
+            if (addLog)
+                Log("Vigilancia detenida. La configuración queda guardada.");
+        }
+
+        private async Task MonitorLoopAsync(CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await RunCheckCycleAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Log("Error inesperado en la revisión: " + ex.Message);
+                }
+
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _settings.IntervalSeconds)), cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+
+        private async Task RunCheckCycleAsync(CancellationToken token)
+        {
+            SetStatus(WifiStatusText, "Comprobando conexión…");
+            var wifiOk = await EnsureWifiConnectionAsync(token);
+            if (!wifiOk)
+            {
+                SetStatus(InternetStatusText, "No comprobado: falta la Wi-Fi configurada");
+                SetStatus(HotspotStatusText, "No se activa sin una conexión válida");
+                return;
+            }
+
+            SetStatus(WifiStatusText, "Conectado a " + _settings.Ssid);
+            await CheckDiagnosticIpAsync(token);
+
+            var internetOk = await HasInternetAsync(token);
+            SetStatus(InternetStatusText, internetOk ? "Disponible" : "Sin acceso confirmado");
+
+            if (!internetOk)
+                Log("La Wi-Fi está conectada, pero la prueba HTTP de Internet no ha respondido correctamente.");
+
+            // Siempre consultar el estado del hotspot. Solo se permite encenderlo cuando Internet se confirma.
+            await EnsureHotspotOnAsync(token, internetOk);
+        }
+
+        private async Task<bool> EnsureWifiConnectionAsync(CancellationToken token)
+        {
+            var adapters = (await WiFiAdapter.FindAllAdaptersAsync()).ToList();
+            if (adapters.Count == 0)
+            {
+                SetStatus(WifiStatusText, "No se detecta un adaptador Wi-Fi compatible");
+                Log("No hay adaptadores disponibles para WiFiControl.");
+                return false;
+            }
+
+            WiFiAdapter selected = null;
+            WiFiAvailableNetwork network = null;
+
+            // Primero comprueba todos los adaptadores para no reconectar si el SSID ya es el correcto.
+            foreach (var adapter in adapters)
+            {
+                token.ThrowIfCancellationRequested();
+                try
+                {
+                    var profile = await adapter.GetConnectedProfileAsync();
+                    if (profile != null && string.Equals(profile.ProfileName, _settings.Ssid, StringComparison.Ordinal))
+                    {
+                        selected = adapter;
+                        break;
+                    }
+                }
+                catch
+                {
+                    // Continúa con el siguiente adaptador Wi-Fi.
+                }
+            }
+
+            if (selected != null)
+                return true;
+
+            // Si no está conectado al SSID deseado, busca la red en todos los adaptadores disponibles.
+            foreach (var adapter in adapters)
+            {
+                token.ThrowIfCancellationRequested();
+                try
+                {
+                    SetStatus(WifiStatusText, "Buscando " + _settings.Ssid + "…");
+                    await adapter.ScanAsync();
+                    var candidate = adapter.NetworkReport.AvailableNetworks.FirstOrDefault(n =>
+                        string.Equals(n.Ssid, _settings.Ssid, StringComparison.Ordinal));
+                    if (candidate != null)
+                    {
+                        selected = adapter;
+                        network = candidate;
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log("No se pudo explorar un adaptador Wi-Fi: " + ex.Message);
+                }
+            }
+
+            if (selected == null || network == null)
+            {
+                SetStatus(WifiStatusText, "SSID no encontrado: " + _settings.Ssid);
+                Log("No se encontró la Wi-Fi configurada. Se volverá a intentar en el próximo ciclo.");
+                return false;
+            }
+
+            SetStatus(WifiStatusText, "Conectando a " + _settings.Ssid + "…");
+            WiFiConnectionResult result;
+            var plainPassword = GetPlainPassword();
+            if (string.IsNullOrEmpty(plainPassword))
+            {
+                result = await selected.ConnectAsync(network, WiFiReconnectionKind.Automatic);
+            }
+            else
+            {
+                var credential = new PasswordCredential { Password = plainPassword };
+                result = await selected.ConnectAsync(network, WiFiReconnectionKind.Automatic, credential);
+            }
+
+            if (result.ConnectionStatus != WiFiConnectionStatus.Success)
+            {
+                SetStatus(WifiStatusText, "No se pudo conectar: " + result.ConnectionStatus);
+                Log("Falló la conexión a la Wi-Fi: " + result.ConnectionStatus);
+                return false;
+            }
+
+            Log("Conexión Wi-Fi solicitada correctamente.");
+            await Task.Delay(2500, token);
+            return true;
+        }
+
+        private string GetPlainPassword()
+        {
+            if (_settings == null || string.IsNullOrWhiteSpace(_settings.ProtectedPassword))
+                return string.Empty;
+
+            try
+            {
+                var bytes = ProtectedData.Unprotect(Convert.FromBase64String(_settings.ProtectedPassword), null,
+                    DataProtectionScope.CurrentUser);
+                return Encoding.UTF8.GetString(bytes);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private async Task CheckDiagnosticIpAsync(CancellationToken token)
+        {
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                using (var ping = new Ping())
+                {
+                    var reply = await ping.SendPingAsync(_settings.DiagnosticIp, 1200);
+                    if (reply.Status == IPStatus.Success)
+                        SetStatus(IpStatusText, "Responde (" + reply.RoundtripTime + " ms)");
+                    else
+                        SetStatus(IpStatusText, "Sin respuesta ICMP (" + reply.Status + ")");
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus(IpStatusText, "No se pudo comprobar: " + ex.Message);
+            }
+        }
+
+        private async Task<bool> HasInternetAsync(CancellationToken token)
+        {
+            try
+            {
+                using (var request = new HttpRequestMessage(HttpMethod.Get,
+                    "http://www.msftconnecttest.com/connecttest.txt"))
+                {
+                    request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue
+                    {
+                        NoCache = true,
+                        NoStore = true
+                    };
+                    using (var response = await InternetClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, token))
+                    {
+                        if (!response.IsSuccessStatusCode)
+                            return false;
+
+                        var content = (await response.Content.ReadAsStringAsync()).Trim();
+                        return string.Equals(content, "Microsoft Connect Test", StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task EnsureHotspotOnAsync(CancellationToken token, bool allowStart)
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                var profiles = WinRtNetworkInformation.GetConnectionProfiles();
+                var sourceProfile = profiles.FirstOrDefault(p => p.IsWlanConnectionProfile &&
+                    string.Equals(p.ProfileName, _settings.Ssid, StringComparison.Ordinal));
+
+                if (sourceProfile == null)
+                    sourceProfile = WinRtNetworkInformation.GetInternetConnectionProfile();
+
+                if (sourceProfile == null)
+                {
+                    SetStatus(HotspotStatusText, "No se detecta un perfil de conexión para compartir");
+                    Log("Internet respondió, pero Windows no devolvió un perfil de conexión para el hotspot.");
+                    return;
+                }
+
+                var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(sourceProfile);
+                if (manager.TetheringOperationalState == TetheringOperationalState.On)
+                {
+                    SetStatus(HotspotStatusText, "Activo");
+                    return;
+                }
+
+                if (manager.TetheringOperationalState == TetheringOperationalState.InTransition)
+                {
+                    SetStatus(HotspotStatusText, "Windows está cambiando el estado del hotspot…");
+                    return;
+                }
+
+                if (!allowStart)
+                {
+                    SetStatus(HotspotStatusText, "Apagado (no se activa sin Internet confirmado)");
+                    return;
+                }
+
+                SetStatus(HotspotStatusText, "Activando punto de acceso…");
+                Log("Internet disponible y hotspot apagado. Solicitando activación a Windows.");
+                var result = await manager.StartTetheringAsync();
+                if (result.Status == TetheringOperationStatus.Success)
+                {
+                    SetStatus(HotspotStatusText, "Activado correctamente");
+                    Log("Punto de acceso móvil activado.");
+                }
+                else
+                {
+                    var detail = string.IsNullOrWhiteSpace(result.AdditionalErrorMessage)
+                        ? result.Status.ToString()
+                        : result.Status + " · " + result.AdditionalErrorMessage;
+                    SetStatus(HotspotStatusText, "Windows no pudo activarlo: " + detail);
+                    Log("No se pudo activar el hotspot: " + detail);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus(HotspotStatusText, "Error al consultar/activar: " + ex.Message);
+                Log("Error al usar la API del punto de acceso móvil: " + ex.Message);
+            }
+        }
+
+        private void SetStatus(TextBlock target, string text)
+        {
+            if (Dispatcher.CheckAccess())
+                target.Text = text;
+            else
+                Dispatcher.BeginInvoke(new Action(() => target.Text = text), DispatcherPriority.Background);
+        }
+
+        private void Log(string message)
+        {
+            var line = DateTime.Now.ToString("HH:mm:ss") + "  " + message;
+            if (Dispatcher.CheckAccess())
+                AppendLogLine(line);
+            else
+                Dispatcher.BeginInvoke(new Action(() => AppendLogLine(line)), DispatcherPriority.Background);
+        }
+
+        private void AppendLogLine(string line)
+        {
+            LogBox.AppendText(line + Environment.NewLine);
+            var lines = LogBox.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
+            if (lines.Length > 180)
+                LogBox.Text = string.Join(Environment.NewLine, lines.Skip(lines.Length - 160));
+            LogBox.ScrollToEnd();
+        }
+
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            StopMonitoring(false);
+        }
+    }
+
+    public class AppSettings
+    {
+        public string DiagnosticIp { get; set; }
+        public string Ssid { get; set; }
+        public string ProtectedPassword { get; set; }
+        public int IntervalSeconds { get; set; }
+    }
+}
