@@ -87,9 +87,79 @@ namespace WifiGuardian
 
         private void SetBrushColor(string key, string color)
         {
-            var brush = Resources[key] as System.Windows.Media.SolidColorBrush;
-            if (brush != null)
-                brush.Color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color);
+            // WPF may freeze brushes stored in resources. Replace the resource instead of
+            // mutating its Color, which can throw InvalidOperationException and close the app.
+            var parsedColor = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color);
+            Resources[key] = new System.Windows.Media.SolidColorBrush(parsedColor);
+        }
+
+        private async void ResetButton_Click(object sender, RoutedEventArgs e)
+        {
+            var answer = MessageBox.Show(
+                "Se borrarán la configuración guardada, la contraseña cifrada y la preferencia de inicio con Windows. La aplicación volverá a abrirse como nueva. ¿Continuar?",
+                "Restablecer WiFi Guardian",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+
+            if (answer != MessageBoxResult.Yes)
+                return;
+
+            ResetButton.IsEnabled = false;
+            try
+            {
+                await StopMonitoringAsync(false);
+
+                // Remove app settings, including the DPAPI-protected Wi-Fi password.
+                if (Directory.Exists(_settingsFolder))
+                    Directory.Delete(_settingsFolder, true);
+
+                // Remove the desktop startup entry if this build uses the registry fallback.
+                using (var key = Registry.CurrentUser.OpenSubKey(StartupRunKey, true))
+                    key?.DeleteValue(StartupValueName, false);
+
+                // For MSIX builds, also disable the registered startup task when available.
+                try
+                {
+                    var startupTask = await StartupTask.GetAsync("WifiGuardianStartup");
+                    startupTask.Disable();
+                }
+                catch
+                {
+                    // Expected for unpackaged/desktop runs.
+                }
+
+                _initializingControls = true;
+                _settings = null;
+                IpBox.Text = "1.1.1.1";
+                SsidBox.Clear();
+                PasswordBox.Clear();
+                IntervalBox.Text = "15";
+                StartupCheckBox.IsChecked = false;
+                _initializingControls = false;
+                WifiStatusText.Text = "Esperando configuración";
+                IpStatusText.Text = "Sin comprobar";
+                InternetStatusText.Text = "Sin comprobar";
+                HotspotStatusText.Text = "Sin comprobar";
+                LogBox.Clear();
+                RunStatusText.Text = "● DETENIDO";
+                RunStatusText.Foreground = System.Windows.Media.Brushes.Orange;
+                StartButton.Content = "Guardar y comenzar";
+                Log("Restablecimiento completado. No quedan datos de configuración guardados por la aplicación.");
+                MessageBox.Show("La configuración local se ha borrado. WiFi Guardian está listo para configurarse desde cero.",
+                    "Restablecimiento completado", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                _initializingControls = false;
+                Log("No se pudieron borrar todos los datos: " + ex.Message);
+                MessageBox.Show("No se pudieron borrar todos los datos de la aplicación.\\n\\n" + ex.Message,
+                    "Error al restablecer", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                ResetButton.IsEnabled = true;
+            }
         }
 
         private static HttpClient CreateHttpClient()
