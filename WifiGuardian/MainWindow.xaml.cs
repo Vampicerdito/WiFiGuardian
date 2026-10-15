@@ -72,7 +72,9 @@ namespace WifiGuardian
 
         private void ThemeButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyTheme(!_isDarkTheme);
+            _themeMode = _isDarkTheme ? "light" : "dark";
+            ApplyTheme(_themeMode == "dark");
+            SaveThemePreference();
         }
 
         private void ApplyTheme(bool dark)
