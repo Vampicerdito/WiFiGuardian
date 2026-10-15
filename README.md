@@ -27,7 +27,7 @@ El proyecto está escrito en C# con WPF y .NET Framework 4.8.
 
 ## Código fuente
 
-El proyecto fuente completo se está incorporando al repositorio. Cuando estén disponibles los archivos de la solución, la estructura prevista será:
+La solución y los proyectos ya están en el repositorio. La estructura principal es:
 
 - `WifiGuardian.sln`: solución de Visual Studio.
 - `WifiGuardian/`: interfaz y lógica principal.
@@ -36,14 +36,13 @@ El proyecto fuente completo se está incorporando al repositorio. Cuando estén 
 
 ## Compilar y probar
 
-Una vez incorporados los archivos fuente:
+Para compilar primero la aplicación WPF sin empaquetarla, abre PowerShell en la raíz del repositorio y ejecuta:
 
-1. Abre `WifiGuardian.sln` en Visual Studio 2022.
-2. Instala las herramientas MSIX si Visual Studio indica que faltan.
-3. Ejecuta el script de certificado de desarrollo desde PowerShell.
-4. Selecciona `x64` y compila `WifiGuardian.Package` en configuración `Release`.
-5. Instala el paquete generado en `AppPackages` en el mismo equipo de pruebas.
-6. Configura la IP de diagnóstico, el SSID y la contraseña en la aplicación.
+```powershell
+dotnet build .\\WifiGuardian\\WifiGuardian.csproj -c Release
+```
+
+Este comando compila únicamente la aplicación principal y no requiere las herramientas Desktop Bridge del empaquetado MSIX. Para crear el instalador, abre `WifiGuardian.sln` en Visual Studio 2022, instala las herramientas MSIX/Windows Application Packaging Project si faltan, selecciona `x64` y compila `WifiGuardian.Package` en configuración `Release`. Después instala el paquete generado en `AppPackages` en el equipo de pruebas y configura la IP de diagnóstico, el SSID y la contraseña.
 
 El certificado de desarrollo es solo para pruebas locales y no debe usarse para distribuir la aplicación.
 

@@ -323,26 +323,14 @@ namespace WifiGuardian
             WiFiAdapter selected = null;
             WiFiAvailableNetwork network = null;
 
-            // Primero comprueba todos los adaptadores para no reconectar si el SSID ya es el correcto.
-            foreach (var adapter in adapters)
-            {
-                token.ThrowIfCancellationRequested();
-                try
-                {
-                    var profile = await adapter.GetConnectedProfileAsync();
-                    if (profile != null && string.Equals(profile.ProfileName, _settings.Ssid, StringComparison.Ordinal))
-                    {
-                        selected = adapter;
-                        break;
-                    }
-                }
-                catch
-                {
-                    // Continúa con el siguiente adaptador Wi-Fi.
-                }
-            }
+            // WiFiAdapter no expone GetConnectedProfileAsync en el contrato WinRT usado aquí.
+            // Consulta los perfiles de conexión de Windows para evitar reconectar si el SSID ya es correcto.
+            token.ThrowIfCancellationRequested();
+            var connectedProfile = WinRtNetworkInformation.GetConnectionProfiles().FirstOrDefault(p =>
+                p.IsWlanConnectionProfile &&
+                string.Equals(p.ProfileName, _settings.Ssid, StringComparison.Ordinal));
 
-            if (selected != null)
+            if (connectedProfile != null)
                 return true;
 
             // Si no está conectado al SSID deseado, busca la red en todos los adaptadores disponibles.
