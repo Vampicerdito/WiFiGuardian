@@ -579,20 +579,43 @@ namespace WifiGuardian
                 if (sourceProfile == null)
                 {
                     SetStatus(HotspotStatusText, "No se detecta un perfil de conexión para compartir");
-                    Log("Internet respondió, pero Windows no devolvió un perfil de conexión para el hotspot.");
+                    Log("No se detecta un perfil de conexión para consultar el hotspot.");
                     return;
                 }
 
                 var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(sourceProfile);
-                if (manager.TetheringOperationalState == TetheringOperationalState.On)
+                var state = manager.TetheringOperationalState;
+
+                // Si Windows o el usuario están apagando/encendiendo el hotspot, no iniciar otra operación en paralelo.
+                if (state == TetheringOperationalState.InTransition)
                 {
-                    SetStatus(HotspotStatusText, "Activo");
-                    return;
+                    SetStatus(HotspotStatusText, "Windows está terminando el cambio del hotspot…");
+                    Log("El hotspot está en transición. Esperando a que Windows termine antes de enviar otra orden.");
+                    for (var attempt = 0; attempt < 10 && state == TetheringOperationalState.InTransition; attempt++)
+                    {
+                        await Task.Delay(1000, token);
+                        token.ThrowIfCancellationRequested();
+                        state = manager.TetheringOperationalState;
+                    }
+
+                    if (state == TetheringOperationalState.InTransition)
+                    {
+                        SetStatus(HotspotStatusText, "Windows aún no termina el cambio del hotspot");
+                        Log("El hotspot sigue en transición después de 10 segundos. No se forzará otra operación; se comprobará en el siguiente ciclo.");
+                        return;
+                    }
+
+                    if (state == TetheringOperationalState.Off)
+                    {
+                        SetStatus(HotspotStatusText, "Apagado");
+                        Log("Windows terminó de apagar el hotspot. No se intentará encenderlo de nuevo en este ciclo.");
+                        return;
+                    }
                 }
 
-                if (manager.TetheringOperationalState == TetheringOperationalState.InTransition)
+                if (state == TetheringOperationalState.On)
                 {
-                    SetStatus(HotspotStatusText, "Windows está cambiando el estado del hotspot…");
+                    SetStatus(HotspotStatusText, "Activo");
                     return;
                 }
 
@@ -602,9 +625,12 @@ namespace WifiGuardian
                     return;
                 }
 
+                token.ThrowIfCancellationRequested();
                 SetStatus(HotspotStatusText, "Activando punto de acceso…");
                 Log("Internet disponible y hotspot apagado. Solicitando activación a Windows.");
                 var result = await manager.StartTetheringAsync();
+                token.ThrowIfCancellationRequested();
+
                 if (result.Status == TetheringOperationStatus.Success)
                 {
                     SetStatus(HotspotStatusText, "Activado correctamente");
@@ -618,6 +644,11 @@ namespace WifiGuardian
                     SetStatus(HotspotStatusText, "Windows no pudo activarlo: " + detail);
                     Log("No se pudo activar el hotspot: " + detail);
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Detener la vigilancia no debe lanzar otra operación sobre el hotspot.
+                throw;
             }
             catch (Exception ex)
             {
