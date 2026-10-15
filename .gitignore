@@ -1,0 +1,27 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa]ppPackages/
+[Tt]emp/
+
+# Local development certificates and keys
+*.pfx
+*.p12
+*.cer
+*.key
+
+# Local app settings / logs
+settings.xml
+settings.json
+*.log
