@@ -81,18 +81,18 @@ namespace WifiGuardian
         {
             _isDarkTheme = dark;
             SetBrushColor("AppBackgroundBrush", dark ? "#171C1A" : "#F3F6F5");
-            SetBrushColor("SidebarBackgroundBrush", dark ? "#202724" : "#FFFFFF");
+            SetBrushColor("SidebarBackgroundBrush", dark ? "#202724" : "#FBFCFB");
             SetBrushColor("CardBackgroundBrush", dark ? "#242B28" : "#FFFFFF");
             SetBrushColor("PrimaryTextBrush", dark ? "#EDF4F0" : "#172B25");
-            SetBrushColor("SecondaryTextBrush", dark ? "#B2C0B9" : "#66756F");
-            SetBrushColor("InputBackgroundBrush", dark ? "#303936" : "#FFFFFF");
+            SetBrushColor("SecondaryTextBrush", dark ? "#B2C0B9" : "#687871");
+            SetBrushColor("InputBackgroundBrush", dark ? "#303936" : "#F7F9F8");
             SetBrushColor("InputForegroundBrush", dark ? "#F1F5F3" : "#20312B");
             SetBrushColor("LogBackgroundBrush", dark ? "#1C2220" : "#F7F9F8");
-            SetBrushColor("LogBorderBrush", dark ? "#414B46" : "#E2E8E5");
+            SetBrushColor("LogBorderBrush", dark ? "#414B46" : "#DDE6E1");
             SetBrushColor("AccentBrush", dark ? "#36866A" : "#147D5A");
             SetBrushColor("AccentSoftBrush", dark ? "#294A3C" : "#E4F4EC");
             SetBrushColor("DangerBrush", dark ? "#FF8A8A" : "#B93838");
-            SetBrushColor("ControlBorderBrush", dark ? "#46534D" : "#DCE5E0");
+            SetBrushColor("ControlBorderBrush", dark ? "#46534D" : "#DDE6E1");
             if (ThemeButton != null)
                 ThemeButton.Content = dark ? "☀ Tema claro" : "☾ Tema oscuro";
             UpdateNavigationVisuals();
@@ -240,10 +240,14 @@ namespace WifiGuardian
             var recentLatency = samples.Where(s => s.LatencyMs.HasValue).ToList().TakeLastCompatible(20).Select(s => s.LatencyMs.Value).ToList();
             StatsLatencyText.Text = recentLatency.Count == 0 ? "—" : recentLatency.Average().ToString("0") + " ms";
             StatsSamplesText.Text = samples.Count.ToString();
-            StatsHistoryText.Text = string.Join(Environment.NewLine, samples.AsEnumerable().Reverse().Take(12).Select(s =>
-                s.Timestamp.ToString("yyyy-MM-dd HH:mm:ss") + "  |  " +
-                (s.InternetOk ? "Internet disponible" : "Sin acceso HTTP") + "  |  " +
-                (s.LatencyMs.HasValue ? s.LatencyMs.Value + " ms" : "sin latencia")));
+            var historyRows = samples.AsEnumerable().Reverse().Take(12).ToList();
+            var historyHeader = string.Format("{0,-19}  {1,-20}  {2,10}", "HORA", "INTERNET", "LATENCIA");
+            var historyRule = new string('─', 54);
+            StatsHistoryText.Text = historyHeader + Environment.NewLine + historyRule + Environment.NewLine +
+                string.Join(Environment.NewLine, historyRows.Select(s => string.Format("{0,-19}  {1,-20}  {2,10}",
+                    s.Timestamp.ToString("MM-dd HH:mm:ss"),
+                    s.InternetOk ? "Disponible" : "Sin respuesta",
+                    s.LatencyMs.HasValue ? s.LatencyMs.Value + " ms" : "—")));
             DrawStatisticsChart();
         }
 
