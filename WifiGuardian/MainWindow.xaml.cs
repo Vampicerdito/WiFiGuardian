@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
+using Microsoft.Win32;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -31,6 +32,9 @@ namespace WifiGuardian
         private CancellationTokenSource _monitorCancellation;
         private Task _monitorTask;
         private bool _initializingControls;
+        private bool _isMonitoring;
+        private const string StartupRunKey = @"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+        private const string StartupValueName = "WiFiGuardian";
 
         public MainWindow()
         {
@@ -48,7 +52,7 @@ namespace WifiGuardian
         {
             _initializingControls = true;
             LoadSettingsIntoForm();
-            await LoadStartupStatusAsync();
+            LoadStartupStatus();
             _initializingControls = false;
 
             if (_settings != null && !string.IsNullOrWhiteSpace(_settings.Ssid))
@@ -103,51 +107,57 @@ namespace WifiGuardian
             }
         }
 
-        private async Task LoadStartupStatusAsync()
+        private void LoadStartupStatus()
         {
             try
             {
-                var task = await StartupTask.GetAsync("WifiGuardianStartup");
-                StartupCheckBox.IsChecked = task.State == StartupTaskState.Enabled || task.State == StartupTaskState.EnabledByPolicy;
+                using (var key = Registry.CurrentUser.OpenSubKey(StartupRunKey, false))
+                {
+                    var value = key == null ? null : key.GetValue(StartupValueName) as string;
+                    StartupCheckBox.IsChecked = !string.IsNullOrWhiteSpace(value);
+                }
             }
             catch (Exception ex)
             {
                 StartupCheckBox.IsChecked = false;
                 StartupCheckBox.IsEnabled = false;
-                Log("La opción de inicio automático solo funciona al ejecutar la aplicación instalada como MSIX. " + ex.Message);
+                Log("No se pudo leer la configuración de inicio de Windows: " + ex.Message);
             }
         }
 
-        private async void StartupCheckBox_Changed(object sender, RoutedEventArgs e)
+        private void StartupCheckBox_Changed(object sender, RoutedEventArgs e)
         {
             if (_initializingControls || !StartupCheckBox.IsEnabled)
                 return;
 
             try
             {
-                var startupTask = await StartupTask.GetAsync("WifiGuardianStartup");
                 if (StartupCheckBox.IsChecked == true)
                 {
-                    var state = await startupTask.RequestEnableAsync();
-                    if (state == StartupTaskState.Enabled || state == StartupTaskState.EnabledByPolicy)
-                        Log("Inicio con Windows activado.");
-                    else
+                    var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+                    using (var key = Registry.CurrentUser.CreateSubKey(StartupRunKey))
                     {
-                        _initializingControls = true;
-                        StartupCheckBox.IsChecked = false;
-                        _initializingControls = false;
-                        Log("Windows no permitió activar el inicio automático. Comprueba Configuración > Aplicaciones > Inicio.");
+                        if (key == null)
+                            throw new InvalidOperationException("Windows no permitió crear la clave de inicio.");
+                        key.SetValue(StartupValueName, "\"" + exePath + "\"");
                     }
+                    Log("Inicio con Windows activado para el usuario actual.");
                 }
                 else
                 {
-                    startupTask.Disable();
+                    using (var key = Registry.CurrentUser.OpenSubKey(StartupRunKey, true))
+                        key?.DeleteValue(StartupValueName, false);
                     Log("Inicio con Windows desactivado.");
                 }
             }
             catch (Exception ex)
             {
+                _initializingControls = true;
+                StartupCheckBox.IsChecked = !StartupCheckBox.IsChecked;
+                _initializingControls = false;
                 Log("No se pudo cambiar el inicio automático: " + ex.Message);
+                MessageBox.Show("No se pudo cambiar el inicio con Windows.\\n\\n" + ex.Message,
+                    "WiFi Guardian", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -234,8 +244,13 @@ namespace WifiGuardian
 
             StopMonitoring(false);
             _monitorCancellation = new CancellationTokenSource();
+            _isMonitoring = true;
             StartButton.IsEnabled = true;
+            StartButton.Content = "Guardar y reiniciar vigilancia";
             StopButton.IsEnabled = true;
+            RunStatusText.Text = "● EN EJECUCIÓN";
+            RunStatusText.Foreground = System.Windows.Media.Brushes.LightGreen;
+            Log("Vigilancia iniciada. Intervalo: " + Math.Max(5, _settings.IntervalSeconds) + " s.");
             _monitorTask = MonitorLoopAsync(_monitorCancellation.Token);
         }
 
@@ -254,6 +269,12 @@ namespace WifiGuardian
             }
 
             StopButton.IsEnabled = false;
+            if (_isMonitoring)
+            {
+                _isMonitoring = false;
+                RunStatusText.Text = "● DETENIDO";
+                RunStatusText.Foreground = System.Windows.Media.Brushes.Orange;
+            }
             if (addLog)
                 Log("Vigilancia detenida. La configuración queda guardada.");
         }
@@ -264,6 +285,7 @@ namespace WifiGuardian
             {
                 try
                 {
+                    Log("Iniciando ciclo de comprobación.");
                     await RunCheckCycleAsync(cancellationToken);
                 }
                 catch (OperationCanceledException)
@@ -277,6 +299,7 @@ namespace WifiGuardian
 
                 try
                 {
+                    Log("Ciclo finalizado. Próxima revisión en " + Math.Max(5, _settings.IntervalSeconds) + " s.");
                     await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _settings.IntervalSeconds)), cancellationToken);
                 }
                 catch (OperationCanceledException)
@@ -539,9 +562,12 @@ namespace WifiGuardian
         private void AppendLogLine(string line)
         {
             LogBox.AppendText(line + Environment.NewLine);
+            LogBox.CaretIndex = LogBox.Text.Length;
+            LogBox.ScrollToEnd();
             var lines = LogBox.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
             if (lines.Length > 180)
                 LogBox.Text = string.Join(Environment.NewLine, lines.Skip(lines.Length - 160));
+            LogBox.CaretIndex = LogBox.Text.Length;
             LogBox.ScrollToEnd();
         }
 
