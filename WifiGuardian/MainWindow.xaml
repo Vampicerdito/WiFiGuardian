@@ -2,8 +2,19 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="WiFi Guardian" Height="790" Width="720" MinHeight="480" MinWidth="520"
-        Background="#F1F5F3" WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource AppBackgroundBrush}" WindowStartupLocation="CenterScreen"
         Loaded="Window_Loaded" Closing="Window_Closing">
+<Window.Resources>
+        <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F1F5F3" />
+        <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="PrimaryTextBrush" Color="#20312B" />
+        <SolidColorBrush x:Key="SecondaryTextBrush" Color="#65736F" />
+        <SolidColorBrush x:Key="InputBackgroundBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="InputForegroundBrush" Color="#20312B" />
+        <SolidColorBrush x:Key="LogBackgroundBrush" Color="#F7F9F8" />
+        <SolidColorBrush x:Key="LogBorderBrush" Color="#E2E8E5" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#216C54" />
+    </Window.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <Grid Margin="18">
         <Grid.RowDefinitions>
@@ -27,15 +38,16 @@
                     <TextBlock x:Name="RunStatusText" Text="● DETENIDO" Margin="0,10,0,0"
                                FontSize="13" FontWeight="Bold" Foreground="#FFD18A" />
                 </StackPanel>
-                <Border Grid.Column="1" Width="46" Height="46" CornerRadius="10" Background="#286451" VerticalAlignment="Center">
-                    <TextBlock Text="⌁" FontSize="34" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-5,0,0" />
-                </Border>
+                <Button x:Name="ThemeButton" Grid.Column="1" Content="☾ Oscuro" Padding="12,8"
+                        VerticalAlignment="Center" Click="ThemeButton_Click"
+                        Background="#286451" Foreground="White" BorderThickness="0"
+                        ToolTip="Cambiar entre modo claro y oscuro" />
             </Grid>
         </Border>
 
-        <Border Grid.Row="1" Background="White" CornerRadius="10" Padding="18" Margin="0,0,0,14">
+        <Border Grid.Row="1" Background="{DynamicResource CardBackgroundBrush}" CornerRadius="10" Padding="18" Margin="0,0,0,14">
             <StackPanel>
-                <TextBlock Text="CONFIGURACIÓN" FontSize="11" FontWeight="Bold" Foreground="#65736F" Margin="0,0,0,12" />
+                <TextBlock Text="CONFIGURACIÓN" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,12" />
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="1.15*" />
@@ -50,39 +62,39 @@
 
                     <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,12">
                         <TextBlock Text="IP de diagnóstico" Margin="0,0,0,5" FontWeight="SemiBold" />
-                        <TextBox x:Name="IpBox" Text="1.1.1.1" />
+                        <TextBox x:Name="IpBox" Text="1.1.1.1" Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" />
                     </StackPanel>
                     <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,12">
                         <TextBlock Text="Nombre de la Wi-Fi (SSID)" Margin="0,0,0,5" FontWeight="SemiBold" />
-                        <TextBox x:Name="SsidBox" />
+                        <TextBox x:Name="SsidBox" Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" />
                     </StackPanel>
 
                     <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,12">
                         <TextBlock Text="Contraseña de la Wi-Fi" Margin="0,0,0,5" FontWeight="SemiBold" />
-                        <PasswordBox x:Name="PasswordBox" />
-                        <TextBlock Text="Se guarda cifrada para tu usuario de Windows." FontSize="11" Foreground="#65736F" Margin="0,5,0,0" />
+                        <PasswordBox x:Name="PasswordBox" Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" />
+                        <TextBlock Text="Se guarda cifrada para tu usuario de Windows." FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,5,0,0" />
                     </StackPanel>
 
                     <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,12,8">
                         <TextBlock Text="Intervalo de revisión (segundos)" Margin="0,0,0,5" FontWeight="SemiBold" />
-                        <TextBox x:Name="IntervalBox" Text="15" />
+                        <TextBox x:Name="IntervalBox" Text="15" Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" />
                     </StackPanel>
                     <CheckBox x:Name="StartupCheckBox" Grid.Row="2" Grid.Column="1" Content="Iniciar con Windows" VerticalAlignment="Center"
                               Checked="StartupCheckBox_Changed" Unchecked="StartupCheckBox_Changed" Margin="0,8,0,0" />
 
                     <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="La IP es una prueba de alcance independiente. Internet se confirma con una petición HTTP real."
-                               FontSize="11" Foreground="#65736F" TextWrapping="Wrap" Margin="0,5,0,0" />
+                               FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,5,0,0" />
                 </Grid>
                 <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
-                    <Button x:Name="StartButton" Content="Guardar y comenzar" Background="#216C54" Foreground="White" BorderThickness="0" Click="StartButton_Click" />
+                    <Button x:Name="StartButton" Content="Guardar y comenzar" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Click="StartButton_Click" />
                     <Button x:Name="StopButton" Content="Detener" Click="StopButton_Click" IsEnabled="False" />
                 </StackPanel>
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="2" Background="White" CornerRadius="10" Padding="18" Margin="0,0,0,14">
+        <Border Grid.Row="2" Background="{DynamicResource CardBackgroundBrush}" CornerRadius="10" Padding="18" Margin="0,0,0,14">
             <StackPanel>
-                <TextBlock Text="ESTADO ACTUAL" FontSize="11" FontWeight="Bold" Foreground="#65736F" Margin="0,0,0,12" />
+                <TextBlock Text="ESTADO ACTUAL" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,12" />
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="120" />
@@ -106,16 +118,16 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="3" Background="White" CornerRadius="10" Padding="18" Margin="0,0,0,14">
+        <Border Grid.Row="3" Background="{DynamicResource CardBackgroundBrush}" CornerRadius="10" Padding="18" Margin="0,0,0,14">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="REGISTRO DE ACTIVIDAD" FontSize="11" FontWeight="Bold" Foreground="#65736F" Margin="0,0,0,10" />
+                <TextBlock Text="REGISTRO DE ACTIVIDAD" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,10" />
                 <TextBox x:Name="LogBox" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                         Background="#F7F9F8" BorderBrush="#E2E8E5" FontFamily="Consolas" FontSize="11"
+                         Background="{DynamicResource LogBackgroundBrush}" BorderBrush="{DynamicResource LogBorderBrush}" Foreground="{DynamicResource InputForegroundBrush}" FontFamily="Consolas" FontSize="11"
                          Padding="10" Height="220" />
             </Grid>
         </Border>
