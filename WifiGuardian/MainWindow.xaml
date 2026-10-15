@@ -374,7 +374,9 @@
                                             Foreground="{DynamicResource DangerBrush}" Margin="0" />
                                 </Grid>
                                 <TextBlock x:Name="StatsHistoryText" Text="Todavía no hay mediciones. Inicia la vigilancia para comenzar a recopilar datos."
-                                           TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" />
+                                            TextWrapping="NoWrap" FontFamily="Consolas" FontSize="11"
+                                            Padding="12" Background="{DynamicResource LogBackgroundBrush}"
+                                            Foreground="{DynamicResource InputForegroundBrush}" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
