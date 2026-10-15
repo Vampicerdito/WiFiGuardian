@@ -33,7 +33,8 @@ namespace WifiGuardian
         private Task _monitorTask;
         private bool _initializingControls;
         private bool _isMonitoring;
-        private const string StartupRunKey = @"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+        private bool _useRegistryStartup;
+        private const string StartupRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string StartupValueName = "WiFiGuardian";
 
         public MainWindow()
@@ -52,7 +53,7 @@ namespace WifiGuardian
         {
             _initializingControls = true;
             LoadSettingsIntoForm();
-            LoadStartupStatus();
+            await LoadStartupStatusAsync();
             _initializingControls = false;
 
             if (_settings != null && !string.IsNullOrWhiteSpace(_settings.Ssid))
@@ -107,31 +108,68 @@ namespace WifiGuardian
             }
         }
 
-        private void LoadStartupStatus()
+        private async Task LoadStartupStatusAsync()
         {
             try
             {
-                using (var key = Registry.CurrentUser.OpenSubKey(StartupRunKey, false))
-                {
-                    var value = key == null ? null : key.GetValue(StartupValueName) as string;
-                    StartupCheckBox.IsChecked = !string.IsNullOrWhiteSpace(value);
-                }
+                var startupTask = await StartupTask.GetAsync("WifiGuardianStartup");
+                _useRegistryStartup = false;
+                StartupCheckBox.IsChecked = startupTask.State == StartupTaskState.Enabled ||
+                                            startupTask.State == StartupTaskState.EnabledByPolicy;
             }
-            catch (Exception ex)
+            catch
             {
-                StartupCheckBox.IsChecked = false;
-                StartupCheckBox.IsEnabled = false;
-                Log("No se pudo leer la configuración de inicio de Windows: " + ex.Message);
+                // Al ejecutar sin empaquetado MSIX, la API StartupTask no está disponible.
+                // En ese caso se usa la clave Run del usuario actual.
+                _useRegistryStartup = true;
+                try
+                {
+                    using (var key = Registry.CurrentUser.OpenSubKey(StartupRunKey, false))
+                    {
+                        var value = key == null ? null : key.GetValue(StartupValueName) as string;
+                        StartupCheckBox.IsChecked = !string.IsNullOrWhiteSpace(value);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    StartupCheckBox.IsChecked = false;
+                    StartupCheckBox.IsEnabled = false;
+                    Log("No se pudo leer la configuración de inicio de Windows: " + ex.Message);
+                }
             }
         }
 
-        private void StartupCheckBox_Changed(object sender, RoutedEventArgs e)
+        private async void StartupCheckBox_Changed(object sender, RoutedEventArgs e)
         {
             if (_initializingControls || !StartupCheckBox.IsEnabled)
                 return;
 
             try
             {
+                if (!_useRegistryStartup)
+                {
+                    var startupTask = await StartupTask.GetAsync("WifiGuardianStartup");
+                    if (StartupCheckBox.IsChecked == true)
+                    {
+                        var state = await startupTask.RequestEnableAsync();
+                        if (state == StartupTaskState.Enabled || state == StartupTaskState.EnabledByPolicy)
+                            Log("Inicio con Windows activado.");
+                        else
+                        {
+                            _initializingControls = true;
+                            StartupCheckBox.IsChecked = false;
+                            _initializingControls = false;
+                            Log("Windows no permitió activar el inicio automático. Comprueba Configuración > Aplicaciones > Inicio.");
+                        }
+                    }
+                    else
+                    {
+                        startupTask.Disable();
+                        Log("Inicio con Windows desactivado.");
+                    }
+                    return;
+                }
+
                 if (StartupCheckBox.IsChecked == true)
                 {
                     var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
@@ -156,7 +194,7 @@ namespace WifiGuardian
                 StartupCheckBox.IsChecked = !StartupCheckBox.IsChecked;
                 _initializingControls = false;
                 Log("No se pudo cambiar el inicio automático: " + ex.Message);
-                MessageBox.Show("No se pudo cambiar el inicio con Windows.\\n\\n" + ex.Message,
+                MessageBox.Show("No se pudo cambiar el inicio con Windows.\n\n" + ex.Message,
                     "WiFi Guardian", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
