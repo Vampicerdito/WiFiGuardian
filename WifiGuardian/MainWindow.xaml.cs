@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -28,7 +29,11 @@ namespace WifiGuardian
         private readonly string _settingsFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WifiGuardian");
         private readonly string _settingsPath;
+        private readonly string _statisticsPath;
         private AppSettings _settings;
+        private readonly List<StatsSample> _statistics = new List<StatsSample>();
+        private string _themeMode = "system";
+        private long? _lastLatencyMs;
         private CancellationTokenSource _monitorCancellation;
         private Task _monitorTask;
         private bool _initializingControls;
@@ -45,6 +50,7 @@ namespace WifiGuardian
         {
             InitializeComponent();
             _settingsPath = Path.Combine(_settingsFolder, "settings.xml");
+            _statisticsPath = Path.Combine(_settingsFolder, "statistics.xml");
             ApplyTheme(IsSystemDarkTheme());
         }
 
@@ -73,6 +79,7 @@ namespace WifiGuardian
         {
             _isDarkTheme = dark;
             SetBrushColor("AppBackgroundBrush", dark ? "#171C1A" : "#F3F6F5");
+            SetBrushColor("SidebarBackgroundBrush", dark ? "#202724" : "#FFFFFF");
             SetBrushColor("CardBackgroundBrush", dark ? "#242B28" : "#FFFFFF");
             SetBrushColor("PrimaryTextBrush", dark ? "#EDF4F0" : "#172B25");
             SetBrushColor("SecondaryTextBrush", dark ? "#B2C0B9" : "#66756F");
@@ -81,10 +88,224 @@ namespace WifiGuardian
             SetBrushColor("LogBackgroundBrush", dark ? "#1C2220" : "#F7F9F8");
             SetBrushColor("LogBorderBrush", dark ? "#414B46" : "#E2E8E5");
             SetBrushColor("AccentBrush", dark ? "#36866A" : "#147D5A");
+            SetBrushColor("AccentSoftBrush", dark ? "#294A3C" : "#E4F4EC");
             SetBrushColor("DangerBrush", dark ? "#FF8A8A" : "#B93838");
             SetBrushColor("ControlBorderBrush", dark ? "#46534D" : "#DCE5E0");
             if (ThemeButton != null)
-                ThemeButton.Content = dark ? "☀ Modo claro" : "☾ Modo oscuro";
+                ThemeButton.Content = dark ? "☀ Tema claro" : "☾ Tema oscuro";
+            UpdateNavigationVisuals();
+            DrawStatisticsChart();
+        }
+
+        private void ThemeSystemButton_Click(object sender, RoutedEventArgs e)
+        {
+            _themeMode = "system";
+            ApplyTheme(IsSystemDarkTheme());
+            SaveThemePreference();
+        }
+
+        private void ThemeLightButton_Click(object sender, RoutedEventArgs e)
+        {
+            _themeMode = "light";
+            ApplyTheme(false);
+            SaveThemePreference();
+        }
+
+        private void ThemeDarkButton_Click(object sender, RoutedEventArgs e)
+        {
+            _themeMode = "dark";
+            ApplyTheme(true);
+            SaveThemePreference();
+        }
+
+        private void SaveThemePreference()
+        {
+            try
+            {
+                if (_settings == null)
+                    _settings = new AppSettings { DiagnosticIp = "1.1.1.1", IntervalSeconds = 15 };
+                _settings.ThemeMode = _themeMode;
+                Directory.CreateDirectory(_settingsFolder);
+                using (var stream = File.Create(_settingsPath))
+                    new XmlSerializer(typeof(AppSettings)).Serialize(stream, _settings);
+            }
+            catch (Exception ex) { Log("No se pudo guardar la preferencia de tema: " + ex.Message); }
+        }
+
+        private void NavConnectionButton_Click(object sender, RoutedEventArgs e) { ShowPage("connection"); }
+        private void NavStatsButton_Click(object sender, RoutedEventArgs e) { ShowPage("statistics"); }
+        private void NavSettingsButton_Click(object sender, RoutedEventArgs e) { ShowPage("settings"); }
+
+        private void ShowPage(string page)
+        {
+            PageConnection.Visibility = page == "connection" ? Visibility.Visible : Visibility.Collapsed;
+            PageStatistics.Visibility = page == "statistics" ? Visibility.Visible : Visibility.Collapsed;
+            PageSettings.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
+            PageTitleText.Text = page == "connection" ? "Conexión" : page == "statistics" ? "Estadísticas" : "Configuración";
+            PageSubtitleText.Text = page == "connection" ? "Supervisión y recuperación de la conexión" :
+                page == "statistics" ? "Historial de disponibilidad y latencia" : "Preferencias, diagnóstico y mantenimiento";
+            UpdateNavigationVisuals();
+            if (page == "statistics") RefreshStatisticsView();
+        }
+
+        private void UpdateNavigationVisuals()
+        {
+            if (NavConnectionButton == null) return;
+            SetNavigationButton(NavConnectionButton, PageConnection.Visibility == Visibility.Visible);
+            SetNavigationButton(NavStatsButton, PageStatistics.Visibility == Visibility.Visible);
+            SetNavigationButton(NavSettingsButton, PageSettings.Visibility == Visibility.Visible);
+        }
+
+        private void SetNavigationButton(Button button, bool selected)
+        {
+            button.Background = selected ? (System.Windows.Media.Brush)FindResource("AccentSoftBrush") : System.Windows.Media.Brushes.Transparent;
+            button.Foreground = selected ? (System.Windows.Media.Brush)FindResource("AccentBrush") :
+                (System.Windows.Media.Brush)FindResource("PrimaryTextBrush");
+        }
+
+        private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            AppSettings config;
+            if (!TryReadSettings(out config)) return;
+            try
+            {
+                config.ThemeMode = _themeMode;
+                Directory.CreateDirectory(_settingsFolder);
+                using (var stream = File.Create(_settingsPath))
+                    new XmlSerializer(typeof(AppSettings)).Serialize(stream, config);
+                _settings = config;
+                Log("Parámetros guardados correctamente.");
+                MessageBox.Show("Los parámetros se guardaron correctamente.", "WiFi Guardian",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("No se pudieron guardar los parámetros.\n\n" + ex.Message,
+                    "WiFi Guardian", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LoadStatistics()
+        {
+            try
+            {
+                if (!File.Exists(_statisticsPath)) return;
+                using (var stream = File.OpenRead(_statisticsPath))
+                {
+                    var loaded = (List<StatsSample>)new XmlSerializer(typeof(List<StatsSample>)).Deserialize(stream);
+                    _statistics.Clear();
+                    if (loaded != null) _statistics.AddRange(loaded.OrderBy(s => s.Timestamp).ToList().TakeLastCompatible(2000));
+                }
+            }
+            catch (Exception ex) { Log("No se pudo cargar el historial estadístico: " + ex.Message); }
+            RefreshStatisticsView();
+        }
+
+        private void SaveStatistics()
+        {
+            try
+            {
+                Directory.CreateDirectory(_settingsFolder);
+                var samples = _statistics.Count > 2000 ? _statistics.Skip(_statistics.Count - 2000).ToList() : _statistics.ToList();
+                using (var stream = File.Create(_statisticsPath))
+                    new XmlSerializer(typeof(List<StatsSample>)).Serialize(stream, samples);
+            }
+            catch (Exception ex) { Log("No se pudo guardar el historial estadístico: " + ex.Message); }
+        }
+
+        private void AddStatisticsSample(bool internetOk, long? latencyMs)
+        {
+            _statistics.Add(new StatsSample { Timestamp = DateTime.Now, InternetOk = internetOk, LatencyMs = latencyMs });
+            if (_statistics.Count > 2000) _statistics.RemoveRange(0, _statistics.Count - 2000);
+            SaveStatistics();
+            RefreshStatisticsView();
+        }
+
+        private void RefreshStatisticsView()
+        {
+            if (StatsAvailabilityText == null) return;
+            var samples = _statistics.ToList();
+            if (samples.Count == 0)
+            {
+                StatsAvailabilityText.Text = "Sin datos";
+                StatsLatencyText.Text = "—";
+                StatsSamplesText.Text = "0";
+                StatsHistoryText.Text = "Todavía no hay mediciones. Inicia la vigilancia para comenzar a recopilar datos.";
+                DrawStatisticsChart();
+                return;
+            }
+            StatsAvailabilityText.Text = (100.0 * samples.Count(s => s.InternetOk) / samples.Count).ToString("0.0") + "%";
+            var recentLatency = samples.Where(s => s.LatencyMs.HasValue).ToList().TakeLastCompatible(20).Select(s => s.LatencyMs.Value).ToList();
+            StatsLatencyText.Text = recentLatency.Count == 0 ? "—" : recentLatency.Average().ToString("0") + " ms";
+            StatsSamplesText.Text = samples.Count.ToString();
+            StatsHistoryText.Text = string.Join(Environment.NewLine, samples.AsEnumerable().Reverse().Take(12).Select(s =>
+                s.Timestamp.ToString("yyyy-MM-dd HH:mm:ss") + "  |  " +
+                (s.InternetOk ? "Internet disponible" : "Sin acceso HTTP") + "  |  " +
+                (s.LatencyMs.HasValue ? s.LatencyMs.Value + " ms" : "sin latencia")));
+            DrawStatisticsChart();
+        }
+
+        private void DrawStatisticsChart()
+        {
+            if (StatsChartCanvas == null) return;
+            StatsChartCanvas.Children.Clear();
+            var values = _statistics.Where(s => s.LatencyMs.HasValue).ToList().TakeLastCompatible(40);
+            var width = StatsChartCanvas.ActualWidth;
+            var height = StatsChartCanvas.ActualHeight;
+            if (width < 80 || height < 60 || values.Count == 0)
+            {
+                var message = new TextBlock
+                {
+                    Text = values.Count == 0 ? "Las mediciones de latencia aparecerán aquí cuando comience la vigilancia." : "",
+                    Foreground = (System.Windows.Media.Brush)FindResource("SecondaryTextBrush"),
+                    FontSize = 12, TextWrapping = TextWrapping.Wrap, Width = Math.Max(80, width - 24)
+                };
+                Canvas.SetLeft(message, 12);
+                Canvas.SetTop(message, Math.Max(12, height / 2 - 18));
+                StatsChartCanvas.Children.Add(message);
+                return;
+            }
+            var max = Math.Max(10, values.Max(v => (double)v.LatencyMs.Value) * 1.2);
+            const double left = 12, top = 12;
+            var plotWidth = Math.Max(1, width - 24);
+            var plotHeight = Math.Max(1, height - 28);
+            for (var i = 0; i < 4; i++)
+            {
+                var y = top + plotHeight * i / 3.0;
+                StatsChartCanvas.Children.Add(new System.Windows.Shapes.Line
+                {
+                    X1 = left, X2 = left + plotWidth, Y1 = y, Y2 = y,
+                    Stroke = (System.Windows.Media.Brush)FindResource("ControlBorderBrush"),
+                    StrokeThickness = 1,
+                    StrokeDashArray = new System.Windows.Media.DoubleCollection { 2, 3 }
+                });
+            }
+            var line = new System.Windows.Shapes.Polyline
+            {
+                Stroke = (System.Windows.Media.Brush)FindResource("AccentBrush"),
+                StrokeThickness = 2.5,
+                StrokeLineJoin = System.Windows.Media.PenLineJoin.Round
+            };
+            for (var i = 0; i < values.Count; i++)
+            {
+                var x = left + (values.Count == 1 ? plotWidth / 2 : plotWidth * i / (values.Count - 1));
+                var y = top + plotHeight - (values[i].LatencyMs.Value / max * plotHeight);
+                line.Points.Add(new System.Windows.Point(x, y));
+            }
+            StatsChartCanvas.Children.Add(line);
+        }
+
+        private void StatsChartCanvas_SizeChanged(object sender, SizeChangedEventArgs e) { DrawStatisticsChart(); }
+
+        private void ClearStatisticsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var answer = MessageBox.Show("Se eliminará el historial de estadísticas guardado en este equipo. Esta acción no se puede deshacer. ¿Continuar?",
+                "Borrar estadísticas", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes) return;
+            _statistics.Clear();
+            SaveStatistics();
+            RefreshStatisticsView();
+            Log("Historial de estadísticas borrado.");
         }
 
         private void SetBrushColor(string key, string color)
@@ -133,6 +354,11 @@ namespace WifiGuardian
 
                 _initializingControls = true;
                 _settings = null;
+                _statistics.Clear();
+                if (File.Exists(_statisticsPath)) File.Delete(_statisticsPath);
+                RefreshStatisticsView();
+                _themeMode = "system";
+                ApplyTheme(IsSystemDarkTheme());
                 IpBox.Text = "1.1.1.1";
                 SsidBox.Clear();
                 PasswordBox.Clear();
@@ -144,8 +370,10 @@ namespace WifiGuardian
                 InternetStatusText.Text = "Sin comprobar";
                 HotspotStatusText.Text = "Sin comprobar";
                 LogBox.Clear();
-                RunStatusText.Text = "● DETENIDO";
-                RunStatusText.Foreground = System.Windows.Media.Brushes.Orange;
+                RunStatusText.Text = "DETENIDO";
+                RunStatusText.Foreground = (System.Windows.Media.Brush)FindResource("SecondaryTextBrush");
+                RunStatusDot.Fill = System.Windows.Media.Brushes.Orange;
+                ConnectionHeroText.Text = "Esperando configuración";
                 StartButton.Content = "Guardar y comenzar";
                 Log("Restablecimiento completado. No quedan datos de configuración guardados por la aplicación.");
                 MessageBox.Show("La configuración local se ha borrado. WiFi Guardian está listo para configurarse desde cero.",
@@ -174,6 +402,9 @@ namespace WifiGuardian
         {
             _initializingControls = true;
             LoadSettingsIntoForm();
+            _themeMode = _settings == null || string.IsNullOrWhiteSpace(_settings.ThemeMode) ? "system" : _settings.ThemeMode;
+            ApplyTheme(_themeMode == "dark" || (_themeMode == "system" && IsSystemDarkTheme()));
+            LoadStatistics();
             await LoadStartupStatusAsync();
             _initializingControls = false;
 
@@ -206,6 +437,7 @@ namespace WifiGuardian
                 IpBox.Text = string.IsNullOrWhiteSpace(_settings.DiagnosticIp) ? "1.1.1.1" : _settings.DiagnosticIp;
                 SsidBox.Text = _settings.Ssid ?? string.Empty;
                 IntervalBox.Text = Math.Max(5, _settings.IntervalSeconds).ToString();
+                _themeMode = string.IsNullOrWhiteSpace(_settings.ThemeMode) ? "system" : _settings.ThemeMode;
 
                 if (!string.IsNullOrWhiteSpace(_settings.ProtectedPassword))
                 {
@@ -384,7 +616,8 @@ namespace WifiGuardian
                     DiagnosticIp = ipText,
                     Ssid = ssid,
                     ProtectedPassword = Convert.ToBase64String(encrypted),
-                    IntervalSeconds = interval
+                    IntervalSeconds = interval,
+                    ThemeMode = _themeMode
                 };
                 return true;
             }
@@ -410,8 +643,10 @@ namespace WifiGuardian
             StartButton.IsEnabled = true;
             StartButton.Content = "Guardar y reiniciar vigilancia";
             StopButton.IsEnabled = true;
-            RunStatusText.Text = "● EN EJECUCIÓN";
-            RunStatusText.Foreground = System.Windows.Media.Brushes.LightGreen;
+            RunStatusText.Text = "EN EJECUCIÓN";
+            RunStatusText.Foreground = (System.Windows.Media.Brush)FindResource("AccentBrush");
+            RunStatusDot.Fill = System.Windows.Media.Brushes.LimeGreen;
+            ConnectionHeroText.Text = "Vigilancia activa · comprobaciones periódicas";
             Log("Vigilancia iniciada. Intervalo: " + Math.Max(5, _settings.IntervalSeconds) + " s.");
             _monitorTask = MonitorLoopAsync(_monitorCancellation.Token);
         }
@@ -456,8 +691,10 @@ namespace WifiGuardian
             if (_isMonitoring)
             {
                 _isMonitoring = false;
-                RunStatusText.Text = "● DETENIDO";
-                RunStatusText.Foreground = System.Windows.Media.Brushes.Orange;
+                RunStatusText.Text = "DETENIDO";
+                RunStatusText.Foreground = (System.Windows.Media.Brush)FindResource("SecondaryTextBrush");
+                RunStatusDot.Fill = System.Windows.Media.Brushes.Orange;
+                ConnectionHeroText.Text = "Vigilancia detenida";
             }
 
             if (addLog)
@@ -506,10 +743,12 @@ namespace WifiGuardian
             }
 
             SetStatus(WifiStatusText, "Conectado a " + _settings.Ssid);
-            await CheckDiagnosticIpAsync(token);
+            _lastLatencyMs = await CheckDiagnosticIpAsync(token);
 
             var internetOk = await HasInternetAsync(token);
             SetStatus(InternetStatusText, internetOk ? "Disponible" : "Sin acceso confirmado");
+            AddStatisticsSample(internetOk, _lastLatencyMs);
+            SetStatus(ConnectionHeroText, internetOk ? "Internet disponible · comprobación correcta" : "Wi-Fi conectada · Internet no confirmado");
 
             if (!internetOk)
                 Log("La Wi-Fi está conectada, pero la prueba HTTP de Internet no ha respondido correctamente.");
@@ -613,7 +852,7 @@ namespace WifiGuardian
             }
         }
 
-        private async Task CheckDiagnosticIpAsync(CancellationToken token)
+        private async Task<long?> CheckDiagnosticIpAsync(CancellationToken token)
         {
             try
             {
@@ -622,15 +861,16 @@ namespace WifiGuardian
                 {
                     var reply = await ping.SendPingAsync(_settings.DiagnosticIp, 1200);
                     if (reply.Status == IPStatus.Success)
+                    {
                         SetStatus(IpStatusText, "Responde (" + reply.RoundtripTime + " ms)");
-                    else
-                        SetStatus(IpStatusText, "Sin respuesta ICMP (" + reply.Status + ")");
+                        return reply.RoundtripTime;
+                    }
+                    SetStatus(IpStatusText, "Sin respuesta ICMP (" + reply.Status + ")");
                 }
             }
-            catch (Exception ex)
-            {
-                SetStatus(IpStatusText, "No se pudo comprobar: " + ex.Message);
-            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { SetStatus(IpStatusText, "No se pudo comprobar: " + ex.Message); }
+            return null;
         }
 
         private async Task<bool> HasInternetAsync(CancellationToken token)
@@ -823,5 +1063,22 @@ namespace WifiGuardian
         public string Ssid { get; set; }
         public string ProtectedPassword { get; set; }
         public int IntervalSeconds { get; set; }
+        public string ThemeMode { get; set; }
+    }
+
+    public class StatsSample
+    {
+        public DateTime Timestamp { get; set; }
+        public bool InternetOk { get; set; }
+        public long? LatencyMs { get; set; }
+    }
+
+    internal static class EnumerableCompatibility
+    {
+        public static List<T> TakeLastCompatible<T>(this IEnumerable<T> source, int count)
+        {
+            var list = source as IList<T> ?? source.ToList();
+            return list.Skip(Math.Max(0, list.Count - count)).ToList();
+        }
     }
 }
