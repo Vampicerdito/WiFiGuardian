@@ -36,6 +36,7 @@ namespace WifiGuardian
         private bool _useRegistryStartup;
         private bool _isDarkTheme;
         private bool _allowClose;
+        private bool _hotspotManuallyDisabled;
         private const string StartupRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string StartupValueName = "WiFiGuardian";
 
@@ -329,6 +330,7 @@ namespace WifiGuardian
 
             // Wait for any in-flight Windows tethering call to finish before starting another monitor.
             await StopMonitoringAsync(false);
+            _hotspotManuallyDisabled = false;
             _monitorCancellation = new CancellationTokenSource();
             _isMonitoring = true;
             StartButton.IsEnabled = true;
@@ -592,6 +594,12 @@ namespace WifiGuardian
         private async Task EnsureHotspotOnAsync(CancellationToken token, bool allowStart)
         {
             token.ThrowIfCancellationRequested();
+            if (_hotspotManuallyDisabled)
+            {
+                SetStatus(HotspotStatusText, "Apagado manualmente. No se reactivará hasta reiniciar la vigilancia.");
+                return;
+            }
+
             try
             {
                 var profiles = WinRtNetworkInformation.GetConnectionProfiles();
@@ -632,8 +640,9 @@ namespace WifiGuardian
 
                     if (state == TetheringOperationalState.Off)
                     {
-                        SetStatus(HotspotStatusText, "Apagado");
-                        Log("Windows terminó de apagar el hotspot. No se intentará encenderlo de nuevo en este ciclo.");
+                        _hotspotManuallyDisabled = true;
+                        SetStatus(HotspotStatusText, "Apagado manualmente");
+                        Log("El hotspot terminó de apagarse durante una transición. Se respetará la decisión y no se volverá a activar automáticamente en esta sesión de vigilancia.");
                         return;
                     }
                 }
