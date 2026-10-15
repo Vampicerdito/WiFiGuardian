@@ -80,7 +80,9 @@ namespace WifiGuardian
             SetBrushColor("InputForegroundBrush", dark ? "#F1F5F3" : "#20312B");
             SetBrushColor("LogBackgroundBrush", dark ? "#1C2220" : "#F7F9F8");
             SetBrushColor("LogBorderBrush", dark ? "#414B46" : "#E2E8E5");
-            SetBrushColor("AccentBrush", dark ? "#36866A" : "#216C54");
+            SetBrushColor("AccentBrush", dark ? "#36866A" : "#147D5A");
+            SetBrushColor("DangerBrush", dark ? "#FF8A8A" : "#B93838");
+            SetBrushColor("ControlBorderBrush", dark ? "#46534D" : "#DCE5E0");
             if (ThemeButton != null)
                 ThemeButton.Content = dark ? "☀ Modo claro" : "☾ Modo oscuro";
         }
