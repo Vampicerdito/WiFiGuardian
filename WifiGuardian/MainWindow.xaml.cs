@@ -72,10 +72,10 @@ namespace WifiGuardian
         private void ApplyTheme(bool dark)
         {
             _isDarkTheme = dark;
-            SetBrushColor("AppBackgroundBrush", dark ? "#171C1A" : "#F1F5F3");
+            SetBrushColor("AppBackgroundBrush", dark ? "#171C1A" : "#F3F6F5");
             SetBrushColor("CardBackgroundBrush", dark ? "#242B28" : "#FFFFFF");
-            SetBrushColor("PrimaryTextBrush", dark ? "#EDF4F0" : "#20312B");
-            SetBrushColor("SecondaryTextBrush", dark ? "#B2C0B9" : "#65736F");
+            SetBrushColor("PrimaryTextBrush", dark ? "#EDF4F0" : "#172B25");
+            SetBrushColor("SecondaryTextBrush", dark ? "#B2C0B9" : "#66756F");
             SetBrushColor("InputBackgroundBrush", dark ? "#303936" : "#FFFFFF");
             SetBrushColor("InputForegroundBrush", dark ? "#F1F5F3" : "#20312B");
             SetBrushColor("LogBackgroundBrush", dark ? "#1C2220" : "#F7F9F8");
