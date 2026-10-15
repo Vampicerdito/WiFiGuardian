@@ -741,6 +741,8 @@ namespace WifiGuardian
             {
                 SetStatus(InternetStatusText, "No comprobado: falta la Wi-Fi configurada");
                 SetStatus(HotspotStatusText, "No se activa sin una conexión válida");
+                AddStatisticsSample(false, null);
+                SetStatus(ConnectionHeroText, "Wi-Fi no disponible · esperando recuperación");
                 return;
             }
 
