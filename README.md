@@ -2,71 +2,67 @@
 
 **Aplicación de escritorio para Windows 10 que supervisa la conexión Wi-Fi, comprueba el acceso a Internet e intenta recuperar el Punto de acceso móvil cuando corresponde.**
 
-> **Estado: prototipo en desarrollo.** El código fuente está disponible, pero todavía no se ha validado en un equipo Windows real. La compilación, la instalación MSIX y el control del hotspot deben probarse antes de considerar esta versión estable.
+> **Estado: prototipo en desarrollo.** La aplicación todavía debe compilarse y validarse en un equipo Windows real antes de considerarse estable.
 
-## Funciones previstas
+## Funciones
 
-- Supervisar periódicamente la conexión Wi-Fi y comprobar si el equipo está conectado al SSID configurado.
-- Intentar reconectar a la red configurada cuando se pierde la conexión.
-- Comprobar una dirección IP mediante ping como diagnóstico independiente.
-- Verificar el acceso a Internet mediante una solicitud HTTP.
-- Consultar el estado del Punto de acceso móvil de Windows e intentar activarlo si Internet está disponible y el hotspot está apagado.
-- Mostrar el estado y un registro de actividad en la interfaz.
-- Guardar la configuración y proteger la contraseña con DPAPI para el usuario actual de Windows.
-- Ofrecer una opción de inicio de sesión de Windows.
+- Supervisión periódica de la conexión Wi-Fi y del SSID configurado.
+- Intento de reconexión cuando se pierde la conexión.
+- Diagnóstico independiente mediante ping a una IP configurada.
+- Comprobación de Internet mediante una solicitud HTTP.
+- Consulta del estado del Punto de acceso móvil de Windows e intento de activarlo cuando Internet está disponible.
+- Interfaz con indicadores de estado y registro de actividad.
+- Cifrado de la contraseña guardada mediante DPAPI para el usuario actual de Windows.
+- Opción para iniciar con Windows.
 
 ## Requisitos
 
 - Windows 10, versión 1709 (compilación 16299) o posterior.
 - Visual Studio 2022 con la carga de trabajo **Desarrollo de escritorio de .NET**.
 - Windows 10 SDK 10.0.19041.0 o posterior.
-- Soporte de **Windows Application Packaging Project (MSIX)**.
+- Herramientas de empaquetado MSIX para Visual Studio.
 - Acceso a NuGet para restaurar las dependencias.
 
-El proyecto utiliza C#, WPF y .NET Framework 4.8.
+El proyecto está escrito en C# con WPF y .NET Framework 4.8.
 
-## Estructura
+## Código fuente
+
+El proyecto fuente completo se está incorporando al repositorio. Cuando estén disponibles los archivos de la solución, la estructura prevista será:
 
 - `WifiGuardian.sln`: solución de Visual Studio.
-- `WifiGuardian/`: interfaz y lógica principal de la aplicación.
-- `WifiGuardian.Package/`: proyecto de empaquetado MSIX y manifiesto de capacidades.
-- `Create-Test-Certificate.ps1`: crea e instala un certificado local de desarrollo para probar el paquete.
-- `WifiGuardian_Source.zip`: archivo comprimido con el proyecto fuente original.
+- `WifiGuardian/`: interfaz y lógica principal.
+- `WifiGuardian.Package/`: proyecto de empaquetado MSIX y manifiesto.
+- `Create-Test-Certificate.ps1`: certificado local de desarrollo.
 
 ## Compilar y probar
 
-1. Descarga o clona este repositorio y descomprime `WifiGuardian_Source.zip` si necesitas la copia íntegra del proyecto original.
-2. Abre `WifiGuardian.sln` en Visual Studio 2022.
-3. Si falta el soporte para proyectos MSIX, instala la extensión o los componentes correspondientes.
-4. Abre PowerShell en la carpeta del proyecto y ejecuta:
+Una vez incorporados los archivos fuente:
 
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\Create-Test-Certificate.ps1
-   ```
+1. Abre `WifiGuardian.sln` en Visual Studio 2022.
+2. Instala las herramientas MSIX si Visual Studio indica que faltan.
+3. Ejecuta el script de certificado de desarrollo desde PowerShell.
+4. Selecciona `x64` y compila `WifiGuardian.Package` en configuración `Release`.
+5. Instala el paquete generado en `AppPackages` en el mismo equipo de pruebas.
+6. Configura la IP de diagnóstico, el SSID y la contraseña en la aplicación.
 
-5. En Visual Studio, selecciona `x64` y compila `WifiGuardian.Package` en configuración `Release`.
-6. Instala el paquete generado en `AppPackages` en el mismo equipo de pruebas.
-7. Abre WiFiGuardian, configura la IP de diagnóstico, el SSID y la contraseña y pulsa **Guardar y comenzar**.
+El certificado de desarrollo es solo para pruebas locales y no debe usarse para distribuir la aplicación.
 
-El certificado del script es únicamente para desarrollo local. No lo uses para distribuir la aplicación a otras personas.
-
-## Consideraciones importantes
+## Limitaciones conocidas
 
 - La activación del hotspot depende de Windows, del adaptador Wi-Fi, de sus controladores y de la configuración de Conexión compartida a Internet (ICS).
-- El hotspot conserva el nombre y la contraseña configurados en Windows. WiFiGuardian no cambia las credenciales de la red emitida.
-- Un ping fallido no demuestra por sí solo que no haya Internet; por eso existe una comprobación HTTP separada.
-- La aplicación no apaga el hotspot al perder Internet.
-- La aplicación debe permanecer abierta para realizar la supervisión.
-- La API del hotspot debe probarse con el paquete MSIX instalado; ejecutar solo el proyecto WPF desde Visual Studio puede no proporcionar los permisos necesarios.
-- No se afirma que el prototipo esté compilado, certificado ni probado en hardware real.
+- El hotspot conserva el nombre y la contraseña configurados en Windows.
+- Un ping fallido no demuestra por sí solo que no haya Internet; por eso se utiliza una comprobación HTTP separada.
+- La aplicación no apaga el hotspot al perder Internet y debe permanecer abierta para supervisar la conexión.
+- El acceso a la API del hotspot debe probarse con el paquete MSIX instalado.
+- No se afirma que el prototipo esté compilado, certificado ni validado en hardware real.
 
 ## Seguridad
 
-La contraseña se cifra mediante DPAPI con el ámbito del usuario actual de Windows. No compartas archivos de configuración que puedan contener datos personales ni reutilices el certificado de desarrollo para distribución.
+La contraseña se cifra mediante DPAPI con el ámbito del usuario actual de Windows. No publiques contraseñas, configuraciones privadas ni certificados de desarrollo.
 
 ## Contribuciones
 
-Los informes de errores y las mejoras son bienvenidos. Incluye la versión de Windows, el adaptador Wi-Fi, la versión del controlador y los pasos para reproducir el problema. No publiques contraseñas ni datos privados de la red.
+Los informes de errores y las mejoras son bienvenidos. Incluye la versión de Windows, el adaptador Wi-Fi, la versión del controlador y los pasos para reproducir el problema. No publiques credenciales ni datos privados de la red.
 
 ## Licencia
 
