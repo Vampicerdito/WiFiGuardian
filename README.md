@@ -11,6 +11,9 @@
 - Diagnóstico independiente mediante ping a una IP configurada.
 - Comprobación de Internet mediante una solicitud HTTP.
 - Consulta del estado del Punto de acceso móvil de Windows e intento de activarlo cuando Internet está disponible.
+- Interfaz moderna inspirada en Windows 11, con barra lateral y módulos de Conexión, Estadísticas y Configuración.
+- Historial local de disponibilidad HTTP y latencia ICMP, con gráfico de tendencia y limpieza independiente de estadísticas.
+- Preferencia de tema del sistema, modo claro u oscuro, y parámetros de diagnóstico configurables.
 - Interfaz con indicadores de estado y registro de actividad.
 - Cifrado de la contraseña guardada mediante DPAPI para el usuario actual de Windows.
 - Opción para iniciar con Windows.
@@ -52,6 +55,7 @@ El certificado de desarrollo es solo para pruebas locales y no debe usarse para 
 - El hotspot conserva el nombre y la contraseña configurados en Windows.
 - Un ping fallido no demuestra por sí solo que no haya Internet; por eso se utiliza una comprobación HTTP separada.
 - La aplicación no apaga el hotspot al perder Internet y debe permanecer abierta para supervisar la conexión.
+- Las estadísticas reflejan las comprobaciones realizadas mientras la aplicación está ejecutándose; no miden periodos en los que la aplicación está cerrada.
 - El acceso a la API del hotspot debe probarse con el paquete MSIX instalado.
 - No se afirma que el prototipo esté compilado, certificado ni validado en hardware real.
 
