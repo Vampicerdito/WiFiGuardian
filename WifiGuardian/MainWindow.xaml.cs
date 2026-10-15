@@ -34,6 +34,7 @@ namespace WifiGuardian
         private bool _initializingControls;
         private bool _isMonitoring;
         private bool _useRegistryStartup;
+        private bool _isDarkTheme;
         private const string StartupRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string StartupValueName = "WiFiGuardian";
 
@@ -41,6 +42,51 @@ namespace WifiGuardian
         {
             InitializeComponent();
             _settingsPath = Path.Combine(_settingsFolder, "settings.xml");
+            ApplyTheme(IsSystemDarkTheme());
+        }
+
+        private static bool IsSystemDarkTheme()
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                {
+                    var value = key == null ? null : key.GetValue("AppsUseLightTheme");
+                    return value is int && (int)value == 0;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void ThemeButton_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyTheme(!_isDarkTheme);
+        }
+
+        private void ApplyTheme(bool dark)
+        {
+            _isDarkTheme = dark;
+            SetBrushColor("AppBackgroundBrush", dark ? "#171C1A" : "#F1F5F3");
+            SetBrushColor("CardBackgroundBrush", dark ? "#242B28" : "#FFFFFF");
+            SetBrushColor("PrimaryTextBrush", dark ? "#EDF4F0" : "#20312B");
+            SetBrushColor("SecondaryTextBrush", dark ? "#B2C0B9" : "#65736F");
+            SetBrushColor("InputBackgroundBrush", dark ? "#303936" : "#FFFFFF");
+            SetBrushColor("InputForegroundBrush", dark ? "#F1F5F3" : "#20312B");
+            SetBrushColor("LogBackgroundBrush", dark ? "#1C2220" : "#F7F9F8");
+            SetBrushColor("LogBorderBrush", dark ? "#414B46" : "#E2E8E5");
+            SetBrushColor("AccentBrush", dark ? "#36866A" : "#216C54");
+            if (ThemeButton != null)
+                ThemeButton.Content = dark ? "☀ Modo claro" : "☾ Modo oscuro";
+        }
+
+        private void SetBrushColor(string key, string color)
+        {
+            var brush = Resources[key] as System.Windows.Media.SolidColorBrush;
+            if (brush != null)
+                brush.Color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color);
         }
 
         private static HttpClient CreateHttpClient()
